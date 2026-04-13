@@ -1,5 +1,13 @@
 # Discord Hunter
 
+![node >=18](https://img.shields.io/badge/node-%3E%3D18-3C873A?style=flat-square)
+![python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?style=flat-square)
+![platform Linux](https://img.shields.io/badge/platform-Linux-8A2BE2?style=flat-square)
+![source X/Twitter](https://img.shields.io/badge/source-X%2FTwitter-111111?style=flat-square)
+![discord Discord](https://img.shields.io/badge/discord-Invite%20Hunter-5865F2?style=flat-square)
+![mode alerting | auto-join](https://img.shields.io/badge/mode-alerting%20%7C%20auto--join-1F8B4C?style=flat-square)
+![status production](https://img.shields.io/badge/status-production-FF8C42?style=flat-square)
+
 Discord Hunter monitors selected X accounts, extracts Discord invite codes from tweets, validates them against the Discord API, and sends alerts to Telegram. It also supports an optional auto-join flow with captcha handling and persistent local state.
 
 ## Features
