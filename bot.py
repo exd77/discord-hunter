@@ -42,13 +42,22 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_BASE_URL = os.getenv("GEMINI_BASE_URL", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 CAPSOLVER_API_KEY = os.getenv("CAPSOLVER_API_KEY", "").strip()  # deprecated, kept for compat
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "8"))
-TWEET_FETCH_COUNT = int(os.getenv("TWEET_FETCH_COUNT", "8"))
-DELAY_BETWEEN_ACCOUNTS = int(os.getenv("DELAY_BETWEEN_ACCOUNTS", "1"))
+POLL_MODE = os.getenv("POLL_MODE", "fast").strip().lower() or "fast"
+if POLL_MODE == "safe":
+    CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "15"))
+    TWEET_FETCH_COUNT = int(os.getenv("TWEET_FETCH_COUNT", "5"))
+    DELAY_BETWEEN_ACCOUNTS = float(os.getenv("DELAY_BETWEEN_ACCOUNTS", "1.5"))
+    MAX_CONCURRENT_CHECKS = int(os.getenv("MAX_CONCURRENT_CHECKS", "2"))
+else:
+    CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "6"))
+    TWEET_FETCH_COUNT = int(os.getenv("TWEET_FETCH_COUNT", "10"))
+    DELAY_BETWEEN_ACCOUNTS = float(os.getenv("DELAY_BETWEEN_ACCOUNTS", "0.35"))
+    MAX_CONCURRENT_CHECKS = int(os.getenv("MAX_CONCURRENT_CHECKS", "4"))
 USER_CACHE_TTL = int(os.getenv("USER_CACHE_TTL", "900"))
 LOG_TWEETS_AND_REPLIES_FALLBACK = os.getenv("LOG_TWEETS_AND_REPLIES_FALLBACK", "false").lower() == "true"
 CAPTCHA_MAX_RETRIES = int(os.getenv("CAPTCHA_MAX_RETRIES", "3"))
 ACCOUNT_ERROR_THRESHOLD = int(os.getenv("ACCOUNT_ERROR_THRESHOLD", "10"))
+RATE_LIMIT_BACKOFF_SECONDS = int(os.getenv("RATE_LIMIT_BACKOFF_SECONDS", "45"))
 
 logger = logging.getLogger("discord_invite_hunter")
 logging.basicConfig(
@@ -92,6 +101,7 @@ CURRENT_TOKEN_INDEX = 0
 TOKEN_USAGE: Dict[int, Dict[str, Any]] = {}
 TWITTER_TOKENS: List[Dict[str, str]] = []
 ACCOUNT_ERRORS: Dict[str, int] = {}  # track consecutive errors per account
+RATE_LIMIT_UNTIL = 0.0
 
 # Captcha solver stats (in-memory)
 CAPTCHA_STATS: Dict[str, Any] = {
@@ -893,23 +903,35 @@ async def check_account(username: str, chat_id: int) -> None:
     track_account_error(account_key, True)
 
 
-async def _check_account_safe(username: str, chat_id_str: str) -> None:
-    try:
-        await check_account(username, int(chat_id_str))
-    except Exception as e:
-        logger.error("[ERROR] checking @%s failed: %s", username, e)
-        err_str = str(e).lower()
-        if any(kw in err_str for kw in ("rate limit", "429", "unauthorized", "403")):
-            logger.warning("[TOKEN] Rate limited or auth error, rotating Twitter token")
-            await switch_twitter_token()
+async def _check_account_safe(username: str, chat_id_str: str, semaphore: asyncio.Semaphore) -> None:
+    global RATE_LIMIT_UNTIL
+    async with semaphore:
+        try:
+            await check_account(username, int(chat_id_str))
+        except Exception as e:
+            logger.error("[ERROR] checking @%s failed: %s", username, e)
+            err_str = str(e).lower()
+            if any(kw in err_str for kw in ("rate limit", "429", "unauthorized", "403")):
+                logger.warning("[TOKEN] Rate limited or auth error, rotating Twitter token")
+                RATE_LIMIT_UNTIL = max(RATE_LIMIT_UNTIL, _time.monotonic() + RATE_LIMIT_BACKOFF_SECONDS)
+                await switch_twitter_token()
 
 
 async def monitoring_loop() -> None:
-    logger.info("Monitoring loop started")
+    global RATE_LIMIT_UNTIL
+    logger.info("Monitoring loop started | mode=%s | interval=%ss | fetch_count=%s | concurrency=%s", POLL_MODE, CHECK_INTERVAL, TWEET_FETCH_COUNT, MAX_CONCURRENT_CHECKS)
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_CHECKS)
     while True:
         try:
             if not MONITORED:
                 await asyncio.sleep(CHECK_INTERVAL)
+                continue
+
+            now = _time.monotonic()
+            if RATE_LIMIT_UNTIL > now:
+                backoff = round(RATE_LIMIT_UNTIL - now, 1)
+                logger.warning("[TOKEN] In temporary backoff for %.1fs due to recent rate limit", backoff)
+                await asyncio.sleep(min(backoff, CHECK_INTERVAL))
                 continue
 
             tasks = []
@@ -917,8 +939,8 @@ async def monitoring_loop() -> None:
                 for username, settings in list(accounts.items()):
                     if settings.get("muted"):
                         continue
-                    tasks.append(asyncio.create_task(_check_account_safe(username, chat_id_str)))
-                    await asyncio.sleep(max(0.15, min(DELAY_BETWEEN_ACCOUNTS, 0.5)))
+                    tasks.append(asyncio.create_task(_check_account_safe(username, chat_id_str, semaphore)))
+                    await asyncio.sleep(max(0.1, DELAY_BETWEEN_ACCOUNTS))
 
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)

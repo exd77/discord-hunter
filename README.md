@@ -133,9 +133,12 @@ Despite the legacy variable names, these values are used by the current multimod
 
 ### Runtime Tuning
 
+- `POLL_MODE` (`fast` or `safe`)
 - `CHECK_INTERVAL`
 - `TWEET_FETCH_COUNT`
 - `DELAY_BETWEEN_ACCOUNTS`
+- `MAX_CONCURRENT_CHECKS`
+- `RATE_LIMIT_BACKOFF_SECONDS`
 - `USER_CACHE_TTL`
 - `CAPTCHA_MAX_RETRIES`
 - `ACCOUNT_ERROR_THRESHOLD`
@@ -204,10 +207,18 @@ This usually indicates Discord rejected the captcha response or required a fresh
 
 ### Twitter rate limit issues
 
-Reduce polling pressure by increasing:
+If you want safer behavior, switch to:
+
+```bash
+POLL_MODE=safe
+```
+
+You can also reduce pressure by tuning:
 
 - `CHECK_INTERVAL`
 - `DELAY_BETWEEN_ACCOUNTS`
+- `MAX_CONCURRENT_CHECKS`
+- `RATE_LIMIT_BACKOFF_SECONDS`
 
 And configure multiple rotating X auth token pairs.
 
