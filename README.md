@@ -159,6 +159,32 @@ Or:
 ./start.sh
 ```
 
+## Production Workflow
+
+A typical production workflow for this bot looks like this:
+
+1. Configure `.env` with Telegram, X/Twitter, Discord, and model provider credentials.
+2. Add the X accounts you want to monitor from Telegram using `/add <username>`.
+3. Keep the bot running continuously in a stable Linux environment.
+4. The monitoring loop checks configured accounts on a recurring schedule.
+5. When a new tweet contains a Discord invite, the bot:
+   - extracts the invite code
+   - validates the invite against the Discord API
+   - sends a Telegram alert with status details
+6. If auto-join is enabled, the bot attempts to join using the configured Discord token.
+7. If Discord returns a captcha challenge, the bot tries to solve it through the configured multimodal model workflow.
+8. Join failures, captcha attempts, and artifacts are written to local debug/state files for troubleshooting.
+9. Operators can review alerts in Telegram and inspect `bot.log`, `join_debug.json`, and `tmp/.challenge/` when needed.
+
+### Recommended Production Setup
+
+- Use a dedicated Linux VPS or always-on server
+- Keep the repository private
+- Use multiple X auth token pairs for safer rotation
+- Start with `POLL_MODE=safe`, then move to `fast` only if your tokens are stable
+- Rotate credentials immediately if you suspect rate limiting or account restrictions
+- Periodically review logs and debug artifacts to catch changes in upstream platform behavior
+
 ## Telegram Commands
 
 - `/start`
