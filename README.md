@@ -185,6 +185,73 @@ A typical production workflow for this bot looks like this:
 - Rotate credentials immediately if you suspect rate limiting or account restrictions
 - Periodically review logs and debug artifacts to catch changes in upstream platform behavior
 
+## Architecture Overview
+
+The bot is built around a simple event pipeline:
+
+1. **Account Monitoring Layer**
+   - Polls monitored X accounts using `twikit`
+   - Tracks the latest seen tweet ID per account
+   - Applies polling profiles such as `fast` or `safe`
+
+2. **Invite Detection Layer**
+   - Extracts Discord invite links and bare invite codes from tweet text
+   - Filters and normalizes candidate invite codes before validation
+
+3. **Invite Validation Layer**
+   - Queries the Discord invite API
+   - Collects metadata such as guild name, member count, and expiration
+
+4. **Alerting Layer**
+   - Sends structured Telegram notifications for detected invites
+   - Includes join result, captcha status, and source tweet context
+
+5. **Join Automation Layer**
+   - Optionally attempts Discord invite joins using a configured user token
+   - Replays captcha solution data when a challenge is triggered
+
+6. **Captcha Handling Layer**
+   - Uses Playwright to control a browser session
+   - Uses a multimodal reasoning provider for image-based challenge solving
+   - Stores challenge artifacts for debugging and review
+
+7. **Persistence Layer**
+   - Stores monitored accounts, seen tweet state, and join debug output in JSON files
+   - Keeps enough local state to resume operation without losing context
+
+## Known Limitations
+
+- X/Twitter rate limits can still affect reliability even with token rotation and polling modes.
+- Discord invite joins may fail because of captcha changes, anti-abuse protections, verification gates, or trust restrictions on the account.
+- Captcha solving quality depends heavily on the configured multimodal provider and can vary by challenge type.
+- Upstream platform changes from Discord, X, Playwright, or provider APIs may break parts of the workflow without warning.
+- Browser-based captcha handling may require extra system libraries or periodic maintenance on the host machine.
+- A solved captcha response is not guaranteed to be accepted by Discord in every challenge context.
+- This bot is operationally sensitive and should not be treated as a fire-and-forget service.
+
+## Operational Checklist
+
+Before running in production, make sure you have checked the following:
+
+- `.env` is populated with the correct Telegram, X, Discord, and model credentials
+- `python -m playwright install chromium` has been run successfully
+- Required system libraries for Playwright are installed on the host
+- `POLL_MODE` is set appropriately for your risk tolerance
+- Multiple X auth token pairs are configured if you want better resilience
+- `DISCORD_SUPER_PROPERTIES` and related headers are set to realistic browser values
+- The bot can start cleanly without import or browser launch errors
+- Telegram commands respond as expected
+- `join_debug.json` and `tmp/.challenge/` are writable
+- You have a plan for monitoring `bot.log` and rotating credentials if needed
+
+Recommended maintenance tasks:
+
+- Review `bot.log` regularly for 429s, auth failures, and captcha errors
+- Inspect `join_debug.json` after repeated join failures
+- Clean up old debug artifacts in `tmp/.challenge/` if they grow too large
+- Recheck provider compatibility whenever you change models or API endpoints
+- Revalidate Discord-related headers if join behavior starts degrading
+
 ## Telegram Commands
 
 - `/start`
