@@ -12,3 +12,4 @@ state.json
 state.json.bak
 tmp/
 *.pyc
+*.bak
