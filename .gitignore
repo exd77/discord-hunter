@@ -1,0 +1,14 @@
+.env
+venv/
+__pycache__/
+bot.log
+bot.pid
+bot_restarts.log
+join_debug.json
+join_debug.json.bak
+monitored_accounts.json
+monitored_accounts.json.bak
+state.json
+state.json.bak
+tmp/
+*.pyc
