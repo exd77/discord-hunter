@@ -669,63 +669,64 @@ def format_invite_alert(
 ) -> str:
     invite_url = f"https://discord.gg/{code}"
     tweet_url = f"https://x.com/{username}/status/{tweet_id}"
-    guild_name = invite_info.get("data", {}).get("guild", {}).get("name", "unknown")
+    guild_name = invite_info.get("data", {}).get("guild", {}).get("name", "Unknown server")
     members = invite_info.get("data", {}).get("approximate_member_count", "?")
     online = invite_info.get("data", {}).get("approximate_presence_count", "?")
     expires = invite_info.get("data", {}).get("expires_at")
 
-    # Status with emoji
     if invite_info.get("ok"):
-        invite_status = "✅ VALID"
+        invite_status = "Valid"
+        invite_status_emoji = "✅"
     else:
-        invite_status = f"❌ INVALID ({invite_info.get('status_code')})"
+        invite_status = f"Invalid ({invite_info.get('status_code')})"
+        invite_status_emoji = "❌"
 
-    # Join status with emoji
     join_result = summarize_join_result(join_info)
     if join_info is None:
+        join_status = "Skipped"
         join_emoji = "⏭"
     elif join_info.get("ok"):
+        join_status = join_result
         join_emoji = "✅"
     else:
+        join_status = join_result
         join_emoji = "❌"
 
     join_reason = extract_join_failure_reason(join_info)
 
-    # Captcha info line
-    captcha_line = ""
-    if captcha_info is not None:
-        if captcha_info.get("ok"):
-            solve_time = captcha_info.get("solve_time", "?")
-            attempts = captcha_info.get("attempt", "?")
-            captcha_line = f"Captcha: ✅ solved ({solve_time}s, attempt {attempts})\n"
-        else:
-            captcha_line = f"Captcha: ❌ {captcha_info.get('reason', 'failed')}\n"
+    if captcha_info is None:
+        captcha_line = "Captcha: Not needed\n"
+    elif captcha_info.get("ok"):
+        solve_time = captcha_info.get("solve_time", "?")
+        attempts = captcha_info.get("attempt", "?")
+        captcha_line = f"Captcha: ✅ Solved in {solve_time}s on attempt {attempts}\n"
+    else:
+        captcha_line = f"Captcha: ❌ {captcha_info.get('reason', 'failed')}\n"
 
-    # Timing line
-    time_line = f"Time: {total_time}s\n" if total_time else ""
-
-    # Expiry line
-    expire_line = f"Expires: {expires}\n" if expires else ""
+    timing_line = f"Processing time: {total_time}s\n" if total_time else ""
+    expires_line = f"Invite expiry: {expires}\n" if expires else ""
 
     snippet = (tweet_text or "").strip().replace("<", "&lt;").replace(">", "&gt;")
-    if len(snippet) > 220:
-        snippet = snippet[:220] + "..."
+    if len(snippet) > 280:
+        snippet = snippet[:280] + "..."
+    if not snippet:
+        snippet = "No tweet snippet available."
 
     return (
-        f"🚨 Discord invite found\n\n"
-        f"Account: @{username}\n"
-        f"Code: {code}\n"
-        f"Invite: {invite_url}\n"
-        f"Status: {invite_status}\n"
-        f"Guild: {guild_name}\n"
-        f"Members: {members} ({online} online)\n"
-        f"{expire_line}"
-        f"Join: {join_emoji} {join_result}\n"
-        f"Reason: {join_reason}\n"
+        f"🚨 New Discord invite spotted\n\n"
+        f"Source account: @{username}\n"
+        f"Server: {guild_name}\n"
+        f"Invite code: {code}\n"
+        f"Invite link: {invite_url}\n"
+        f"Invite status: {invite_status_emoji} {invite_status}\n"
+        f"Members: {members} total, {online} online\n"
+        f"{expires_line}"
+        f"Join attempt: {join_emoji} {join_status}\n"
+        f"Join details: {join_reason}\n"
         f"{captcha_line}"
-        f"{time_line}"
-        f"Tweet: {tweet_url}\n\n"
-        f"📝 {snippet}"
+        f"{timing_line}"
+        f"Tweet link: {tweet_url}\n\n"
+        f"Tweet snippet:\n{snippet}"
     )
 
 
