@@ -42,9 +42,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_BASE_URL = os.getenv("GEMINI_BASE_URL", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 CAPSOLVER_API_KEY = os.getenv("CAPSOLVER_API_KEY", "").strip()  # deprecated, kept for compat
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "15"))
-TWEET_FETCH_COUNT = int(os.getenv("TWEET_FETCH_COUNT", "5"))
-DELAY_BETWEEN_ACCOUNTS = int(os.getenv("DELAY_BETWEEN_ACCOUNTS", "2"))
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "8"))
+TWEET_FETCH_COUNT = int(os.getenv("TWEET_FETCH_COUNT", "8"))
+DELAY_BETWEEN_ACCOUNTS = int(os.getenv("DELAY_BETWEEN_ACCOUNTS", "1"))
 USER_CACHE_TTL = int(os.getenv("USER_CACHE_TTL", "900"))
 LOG_TWEETS_AND_REPLIES_FALLBACK = os.getenv("LOG_TWEETS_AND_REPLIES_FALLBACK", "false").lower() == "true"
 CAPTCHA_MAX_RETRIES = int(os.getenv("CAPTCHA_MAX_RETRIES", "3"))
@@ -893,6 +893,17 @@ async def check_account(username: str, chat_id: int) -> None:
     track_account_error(account_key, True)
 
 
+async def _check_account_safe(username: str, chat_id_str: str) -> None:
+    try:
+        await check_account(username, int(chat_id_str))
+    except Exception as e:
+        logger.error("[ERROR] checking @%s failed: %s", username, e)
+        err_str = str(e).lower()
+        if any(kw in err_str for kw in ("rate limit", "429", "unauthorized", "403")):
+            logger.warning("[TOKEN] Rate limited or auth error, rotating Twitter token")
+            await switch_twitter_token()
+
+
 async def monitoring_loop() -> None:
     logger.info("Monitoring loop started")
     while True:
@@ -900,20 +911,18 @@ async def monitoring_loop() -> None:
             if not MONITORED:
                 await asyncio.sleep(CHECK_INTERVAL)
                 continue
+
+            tasks = []
             for chat_id_str, accounts in list(MONITORED.items()):
                 for username, settings in list(accounts.items()):
                     if settings.get("muted"):
                         continue
-                    try:
-                        await check_account(username, int(chat_id_str))
-                    except Exception as e:
-                        logger.error("[ERROR] checking @%s failed: %s", username, e)
-                        # Auto-rotate token on rate limit / auth errors
-                        err_str = str(e).lower()
-                        if any(kw in err_str for kw in ("rate limit", "429", "unauthorized", "403")):
-                            logger.warning("[TOKEN] Rate limited or auth error, rotating Twitter token")
-                            await switch_twitter_token()
-                    await asyncio.sleep(max(DELAY_BETWEEN_ACCOUNTS, get_human_delay()))
+                    tasks.append(asyncio.create_task(_check_account_safe(username, chat_id_str)))
+                    await asyncio.sleep(max(0.15, min(DELAY_BETWEEN_ACCOUNTS, 0.5)))
+
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+
             await asyncio.sleep(CHECK_INTERVAL)
         except Exception as e:
             logger.error("Monitoring loop failure: %s", e)
